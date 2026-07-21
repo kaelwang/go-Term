@@ -1,0 +1,85 @@
+%% ① 登录 → JWT → 闸门
+sequenceDiagram
+  participant U as 浏览器(Login)
+  participant A as App/闸门
+  participant PC as GET /api/public/config
+  participant LH as POST /api/login
+  participant UR as UserRepo
+  participant JWT as security
+  U->>PC: 启动请求公开配置
+  PC-->>U: {auth_enabled, version}
+  U->>A: auth_enabled && 无 token → 渲染登录页
+  U->>LH: 提交 {user, password}
+  LH->>UR: GetUserByUsername(user)
+  UR-->>LH: User(password_hash, role) 或 空
+  LH->>LH: bcrypt.Compare(password, hash)
+  LH->>JWT: GenerateToken(user, secret, exp)
+  JWT-->>LH: token
+  LH-->>U: {token, user, role}
+  U->>A: localStorage.token=token; 进入主界面
+
+%% ② 保存连接 → 侧边栏 → 点击回填
+sequenceDiagram
+  participant F as ConnectForm
+  participant CH as POST /api/connections
+  participant CR as ConnectionRepo
+  participant SB as ConnectionSidebar
+  F->>CH: 保存 {name,host,..,credential_id}
+  CH->>CR: Create(user_id, conn)
+  CR-->>CH: id
+  CH-->>F: {id}
+  F->>SB: 刷新 GET /api/connections
+  SB->>CR: List(user_id)
+  CR-->>SB: [Connection] 按 group 分组
+  SB->>SB: 渲染可折叠分组(本地 useState)
+  Note over SB: 用户点击连接卡片
+  SB->>F: onConnect(savedConn) 回填表单(含 credential_id)
+  F->>F: 打开 WS 带 connection(含 credential_id)
+
+%% ③ 凭证库选凭据 → connect 时解密
+sequenceDiagram
+  participant V as VaultPanel/ConnectForm
+  participant CR as CredentialRepo
+  participant WS as gateway.Connect
+  participant RES as CredentialResolver
+  V->>CR: 列表/选择凭据
+  V->>WS: 连接请求 {credential_id}
+  WS->>WS: wsUser(r) 解析 token 取 user
+  WS->>RES: Resolve(user, credential_id)
+  RES->>CR: GetCredentialDecrypted(user, id)
+  CR->>CR: AES-GCM Decrypt(value)
+  CR-->>RES: {username, password/private_key, passphrase}
+  RES-->>WS: protocol.Credential
+  WS->>WS: 填入 conn.Credential
+  WS->>WS: proto.Dial(conn)
+
+%% ④ 用户设置读写
+sequenceDiagram
+  participant S as SettingsPanel
+  participant SH as GET/PUT /api/settings
+  participant SR as SettingsRepo
+  S->>SH: GET /api/settings (进入页面)
+  SH->>SR: Get(user_id)
+  SR-->>SH: {data: 默认常量∪用户覆盖}
+  SH-->>S: 初始化表单
+  S->>SH: PUT /api/settings {settings}
+  SH->>SR: Set(user_id, json)
+  SR-->>SH: ok
+
+%% ⑤ 引导 admin（首启环境变量）
+sequenceDiagram
+  participant M as main / New
+  participant S as store.Init/Migrate
+  participant BA as BootstrapAdmin
+  participant UR as UserRepo
+  M->>S: store.Init(config) 打开 DB
+  S->>S: Migrate() 幂等建 5 表
+  M->>BA: BootstrapAdmin(config)
+  BA->>UR: CountUsers()
+  UR-->>BA: 0
+  alt GOTERM_BOOTSTRAP_ADMIN_USER & PASS 均设
+    BA->>UR: CreateUser(admin, bcrypt(pass))
+    UR-->>BA: ok
+  else 未设（fail-closed）
+    BA-->>M: 仅 zap.Warn 告警，不建账号
+  end

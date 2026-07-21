@@ -1,0 +1,58 @@
+classDiagram
+    class User {
+        +int ID
+        +string Username
+        +string PasswordHash
+        +string Role
+        +time.Time CreatedAt
+    }
+    class ConnectionGroup {
+        +int ID
+        +int UserID
+        +string Name
+        +int ParentID
+        +int SortOrder
+    }
+    class Connection {
+        +int ID
+        +int UserID
+        +int GroupID
+        +string Name
+        +string Protocol
+        +string Host
+        +int Port
+        +string Username
+        +string AuthType
+        +int CredentialID
+        +string SSHConfigHost
+        +string Proxy
+        +string Hops
+        +string Options
+        +time.Time CreatedAt
+        +time.Time UpdatedAt
+    }
+    class Credential {
+        +int ID
+        +int UserID
+        +string Name
+        +string Type
+        +string ValueEnc
+        +string Meta
+        +time.Time CreatedAt
+    }
+    class UserSetting {
+        +int UserID
+        +string Data
+    }
+    class CredentialResolver {
+        +Resolve(user string, id int) (*protocol.Credential, error)
+    }
+
+    User "1" --> "*" ConnectionGroup : owns
+    User "1" --> "*" Connection : owns
+    User "1" --> "*" Credential : owns
+    User "1" --> "1" UserSetting : has
+    ConnectionGroup "1" --> "*" Connection : contains
+    Credential "1" --> "*" Connection : referenced by(credential_id)
+    CredentialResolver ..> Credential : decrypts
+    CredentialResolver ..> Connection : fills

@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-accent: #22d3ee;
+  --color-panel: #1e1e1e;
+  --color-panel-light: #f3f4f6;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: #1e1e1e;
+  color: #d4d4d4;
+}
+
+.xterm {
+  height: 100%;
+  padding: 4px;
+}
+
+/* thin scrollbars for panels */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}

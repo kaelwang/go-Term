@@ -1,0 +1,17 @@
+# ---- 构建产物 / 二进制 ----
+/dist/
+
+# ---- 运行时数据（SQLite，含用户/凭证表，敏感）----
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ---- 日志 ----
+*.log
+
+# ---- 编辑器 / OS ----
+.DS_Store
+
+# ---- CodeBuddy 项目内部数据 ----
+.codebuddy/

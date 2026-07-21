@@ -1,0 +1,43 @@
+# go-Term configuration file.
+# Environment variables override these values (see internal/config/config.go).
+
+# HTTP/WebSocket listen address.
+listen: ":8080"
+
+# Maximum number of concurrent sessions / transfer workers.
+max_concurrency: 64
+
+# Enable JWT authentication.
+# In production set ENABLE_AUTH=1 (environment variable) to require a JWT
+# bearer token on the /api and /ws routes. The YAML value here is only the
+# fallback and should stay false in favor of the env override.
+auth_enabled: false
+
+# Disable the built-in local terminal (DISABLE_LOCAL_TERMINAL=1).
+disable_local_terminal: false
+
+# Comma-separated whitelist of users allowed to use the local terminal
+# and privileged operations (SERVER_USER=alice,bob).
+server_user: ""
+
+# AES-GCM key for credential encryption at rest.
+# PRODUCTION MUST OVERRIDE THIS via the APP_SECRET environment variable with a
+# long, random, secret value. The default below is insecure and must never be
+# used in a deployed environment.
+app_secret: "change-me-insecure-app-secret"
+
+# JWT signing secret; falls back to app_secret when empty (JWT_SECRET).
+jwt_secret: ""
+
+# JWT validity in minutes.
+jwt_expire_minutes: 1440
+
+# Path to the OpenSSH known_hosts file.
+known_hosts: "~/.ssh/known_hosts"
+
+# Temporary directories for HTTP upload/download.
+upload_dir: "./data/uploads"
+download_dir: "./data/downloads"
+
+# Log level: debug | info | warn | error.
+log_level: "info"
