@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 interface Props {
   open: boolean
@@ -39,10 +39,32 @@ export default function ModalDialog({
   children,
 }: Props) {
   const [value, setValue] = useState(inputDefault || '')
+  const confirmRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    if (open) setValue(inputDefault || '')
-  }, [open, inputDefault])
+    if (open) {
+      setValue(inputDefault || '')
+      // When there is no text input to focus, make the confirm button the
+      // default action so the Enter key confirms directly and it shows focus.
+      if (!inputLabel && !children) confirmRef.current?.focus()
+    }
+  }, [open, inputDefault, inputLabel, children])
+
+  // Keyboard handling for the dialog surface. The confirm button is auto-focused
+  // above, so a focused BUTTON handles Enter natively; we only act here when the
+  // focus is elsewhere (e.g. the card/backdrop) and skip inputs/buttons to avoid
+  // double-triggering.
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const tag = (e.target as HTMLElement).tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onConfirm(value)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    }
+  }
 
   if (!open) return null
 
@@ -50,6 +72,7 @@ export default function ModalDialog({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={onCancel}
+      onKeyDown={handleKeyDown}
     >
       <div
         className="w-[360px] bg-gray-900 border border-gray-700 rounded-lg p-5 shadow-2xl"
@@ -83,6 +106,7 @@ export default function ModalDialog({
             {cancelText}
           </button>
           <button
+            ref={confirmRef}
             className="px-3 py-1 rounded text-sm bg-accent text-black hover:opacity-90"
             onClick={() => onConfirm(value)}
           >

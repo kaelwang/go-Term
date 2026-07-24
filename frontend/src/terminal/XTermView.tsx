@@ -40,6 +40,10 @@ export default function XTermView({ sessionId, connection, isActive, onStatus, o
     // terminal instead of stacking two on the same container.
     if (termRef.current) return
 
+    // Per-effect-run disposed flag. Declared locally (not a persistent ref) so
+    // the StrictMode double-invoke can't poison it for the real run.
+    let disposed = false
+
     const term = new Terminal({
       cols: connection.initial_cols || 80,
       rows: connection.initial_rows || 24,
@@ -72,6 +76,39 @@ export default function XTermView({ sessionId, connection, isActive, onStatus, o
 
     loadOptionalAddons(term)
 
+    // Keep the pty window size in sync with the rendered terminal at ALL times.
+    // A ResizeObserver on the container catches every case a manual
+    // `window.resize` listener misses: background tabs going 0→real size when
+    // activated, split panes resizing, scrollbar toggling, and layout settling
+    // after mount. Without this the remote pty can keep an obsolete size and
+    // full-screen programs (vi / less) or bash line wrapping end up 错位/错行.
+    let lastW = -1
+    let lastH = -1
+    const refit = () => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      if (w === lastW && h === lastH) return
+      lastW = w
+      lastH = h
+      try {
+        fit.fit()
+      } catch {
+        /* container not laid out yet; retry on next observer tick */
+      }
+    }
+    const ro = new ResizeObserver(refit)
+    ro.observe(el)
+    refit()
+
+    // Web fonts load asynchronously; the first fit() may have used a fallback
+    // font with different glyph metrics, leaving cols/rows out of sync with what
+    // is actually rendered. Re-fit once fonts are ready so wrapping aligns.
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        if (!disposed) refit()
+      })
+    }
+
     const ws = new WSClient(sessionId)
     wsRef.current = ws
     wsRegistry.set(sessionId, ws)
@@ -92,15 +129,25 @@ export default function XTermView({ sessionId, connection, isActive, onStatus, o
       setClosed(true)
       onStatus?.('closed')
     }
-    ws.onOpen = () => onStatus?.('open')
+    ws.onOpen = () => {
+      onStatus?.('open')
+      // 连接就绪后立刻把 xterm 的真实窗口尺寸告知后端。首次 fit() 触发的
+      // resize 事件发生在 ws 握手完成之前，会被静默丢弃；若不补发，远端
+      // pty 会停留在默认的 80x24，vi / less 等全屏程序只会占据屏幕左上角
+      // 一小块，表现为"显示和输入只有一部分"。
+      try {
+        fit.fit()
+      } catch {
+        /* container not laid out yet */
+      }
+      ws.sendResize(term.cols, term.rows)
+    }
     onStatus?.('connecting')
     ws.connect(connection)
 
     term.onData((data) => {
-      console.log('[XTermView] onData fired, sessionId=', sessionId, 'data=', JSON.stringify(data))
       // Disable keyboard input while a file transfer owns the session Conn.
       if (isTransferring(useTransferStore.getState().active, sessionId)) {
-        console.log('[XTermView] blocked by transfer, sessionId=', sessionId)
         return
       }
       ws.sendInput(new TextEncoder().encode(data))
@@ -109,14 +156,9 @@ export default function XTermView({ sessionId, connection, isActive, onStatus, o
       ws.sendResize(cols, rows)
     })
 
-    const onWinResize = () => {
-      fit.fit()
-      if (isActive) term.focus()
-    }
-    window.addEventListener('resize', onWinResize)
-
     return () => {
-      window.removeEventListener('resize', onWinResize)
+      disposed = true
+      ro.disconnect()
       ws.close()
       wsRegistry.delete(sessionId)
       term.dispose()

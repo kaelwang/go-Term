@@ -12,31 +12,35 @@ import (
 	"go.uber.org/zap"
 )
 
-// startTunnel launches the requested port-forwarding rule(s) in the background.
-func startTunnel(client *cryptossh.Client, cfg *protocol.TunnelConfig) error {
+// startTunnel launches the requested port-forwarding rule(s) in the background
+// and returns the listeners it opened so the session can close them on teardown
+// (otherwise the listening sockets leak after the SSH connection ends).
+func startTunnel(client *cryptossh.Client, cfg *protocol.TunnelConfig) ([]net.Listener, error) {
 	switch cfg.Type {
 	case "local":
 		ln, err := net.Listen("tcp", cfg.LocalAddr)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		go localForward(client, ln, cfg.RemoteAddr)
+		return []net.Listener{ln}, nil
 	case "remote":
 		lr, err := client.Listen("tcp", cfg.RemoteAddr)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		go remoteForward(lr, cfg.LocalAddr)
+		return []net.Listener{lr}, nil
 	case "dynamic":
 		ln, err := net.Listen("tcp", cfg.LocalAddr)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		go dynamicForward(client, ln)
+		return []net.Listener{ln}, nil
 	default:
-		return fmt.Errorf("unsupported tunnel type: %s", cfg.Type)
+		return nil, fmt.Errorf("unsupported tunnel type: %s", cfg.Type)
 	}
-	return nil
 }
 
 // localForward forwards a local listener to a remote address via the SSH client.

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CheckCircle2, XCircle } from 'lucide-react'
 import type {
   ConnectionSpec,
   CredentialMeta,
@@ -48,12 +49,21 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
   const [transfer, setTransfer] = useState<'sftp' | 'ftp'>('sftp')
   const [strict, setStrict] = useState(settings.strictHostKeyChecking || false)
   const [command, setCommand] = useState('')
-  const [testMsg, setTestMsg] = useState('')
-  const [saveMsg, setSaveMsg] = useState('')
+  // Status feedback for the "test" / "save" actions. ok=true → green check,
+  // ok=false → red cross; null clears the message. Stored as objects so we can
+  // render SVG icons instead of relying on emoji glyphs (old devices may lack
+  // an emoji font).
+  const [testState, setTestState] = useState<{ ok: boolean; text: string } | null>(null)
+  const [saveState, setSaveState] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   // ssh_config_host references a Host alias in the server's ~/.ssh/config.
   const [sshConfigHost, setSshConfigHost] = useState('')
   const [sshHosts, setSshHosts] = useState<string[]>([])
+  // SSH port-forwarding (tunnel). Disabled by default; only meaningful for ssh.
+  const [tunnelEnabled, setTunnelEnabled] = useState(false)
+  const [tunnelType, setTunnelType] = useState<'local' | 'remote' | 'dynamic'>('local')
+  const [tunnelLocal, setTunnelLocal] = useState('')
+  const [tunnelRemote, setTunnelRemote] = useState('')
 
   // Vault integration: list of saved credentials + the one selected for reuse.
   const [credList, setCredList] = useState<CredentialMeta[]>([])
@@ -99,6 +109,13 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
     setAuthType(initial.auth_type || 'password')
     setGroupId(initial.group_id ?? null)
     setSshConfigHost(initial.ssh_config_host || '')
+    const t = initial.tunnel ?? (initial.options as { tunnel?: { type: string; local_addr: string; remote_addr: string } })?.tunnel
+    if (t) {
+      setTunnelEnabled(true)
+      setTunnelType((t.type as 'local' | 'remote' | 'dynamic') || 'local')
+      setTunnelLocal(t.local_addr || '')
+      setTunnelRemote(t.remote_addr || '')
+    }
     setSelectedCredId(initial.credential_id ?? null)
     // Pull the plaintext secret from the vault so credential fields are
     // editable; a reused reference keeps the same id.
@@ -121,7 +138,20 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial?.id])
 
-  const compose = (): ConnectionSpec => {
+  const computeTunnel = (): ConnectionSpec['tunnel'] => {
+    if (protocol !== 'ssh' || !tunnelEnabled) return undefined
+    const local = tunnelLocal.trim()
+    const remote = tunnelRemote.trim()
+    if (!local) return undefined
+    if (tunnelType !== 'dynamic' && !remote) return undefined
+    return {
+      type: tunnelType,
+      local_addr: local,
+      remote_addr: tunnelType === 'dynamic' ? '' : remote,
+    }
+  }
+
+  const compose = (includeTunnel = true): ConnectionSpec => {
     const cred: ConnectionSpec['credential'] = {
       type: authType,
       username,
@@ -142,6 +172,7 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
       command: command || undefined,
       transfer: protocol === 'ssh' ? transfer : 'sftp',
       ssh_config_host: sshConfigHost || undefined,
+      tunnel: includeTunnel ? computeTunnel() : undefined,
     }
     return conn
   }
@@ -196,12 +227,12 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
 
   const test = async () => {
     setBusy(true)
-    setTestMsg('测试中...')
+    setTestState(null)
     try {
-      const r = await rest.testTerminal(compose())
-      setTestMsg(r.code === 0 ? '✅ 连接成功' : '❌ ' + r.message)
+      const r = await rest.testTerminal(compose(false))
+      setTestState(r.code === 0 ? { ok: true, text: '连接成功' } : { ok: false, text: r.message })
     } catch (e) {
-      setTestMsg('❌ ' + String(e))
+      setTestState({ ok: false, text: String(e) })
     } finally {
       setBusy(false)
     }
@@ -211,7 +242,7 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
   // connections row: either an existing vault credential is referenced by id,
   // or a new one is created from the inline fields (B3).
   const save = async () => {
-    setSaveMsg('保存中...')
+    setSaveState(null)
     const p = Number(port) || DEFAULT_PORT[protocol]
     const alias = sshConfigHost.trim()
     const baseName = alias
@@ -255,6 +286,7 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
       // from the saved connection in edit mode, so the original value is
       // preserved unless the user deliberately changes it.
       sshConfigHost: sshConfigHost,
+      tunnel: computeTunnel(),
     }
     let id: number | null
     if (initial?.id) {
@@ -263,10 +295,10 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
       id = await useConnectionStore.getState().saveConnection(input)
     }
     if (id != null) {
-      setSaveMsg('✅ 已保存')
+      setSaveState({ ok: true, text: '已保存' })
       onClose()
     } else {
-      setSaveMsg('❌ 保存失败')
+      setSaveState({ ok: false, text: '保存失败' })
     }
   }
 
@@ -396,6 +428,39 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
               <span className="text-sm text-gray-300">严格校验 known_hosts</span>
             </div>
           )}
+          {protocol === 'ssh' && (
+            <div className="col-span-2 border-t border-gray-700 pt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <input id="tunnel-enabled" type="checkbox" checked={tunnelEnabled} onChange={(e) => setTunnelEnabled(e.target.checked)} />
+                <label htmlFor="tunnel-enabled" className="text-sm text-gray-200">启用 SSH 端口转发（Tunnel）</label>
+              </div>
+              {tunnelEnabled && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={label}>类型</label>
+                      <select className={field} value={tunnelType} onChange={(e) => setTunnelType(e.target.value as 'local' | 'remote' | 'dynamic')}>
+                        <option value="local">本地转发 (Local)</option>
+                        <option value="remote">远程转发 (Remote)</option>
+                        <option value="dynamic">动态 / SOCKS5 (Dynamic)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={label}>{tunnelType === 'dynamic' ? 'SOCKS 监听地址' : '本地监听地址'}</label>
+                      <input className={field} value={tunnelLocal} onChange={(e) => setTunnelLocal(e.target.value)} placeholder="127.0.0.1:8080" />
+                    </div>
+                    {tunnelType !== 'dynamic' && (
+                      <div className="col-span-2">
+                        <label className={label}>{tunnelType === 'local' ? '远程目标地址' : '本地目标地址'}</label>
+                        <input className={field} value={tunnelRemote} onChange={(e) => setTunnelRemote(e.target.value)} placeholder="10.0.0.5:80" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">转发在连接建立后于服务器端开启，连接关闭时自动停止。本地/远程转发需填写监听地址与目标地址；动态转发只需监听地址（SOCKS5 代理）。</p>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 mt-4">
@@ -406,8 +471,26 @@ export default function ConnectForm({ onConnect, onClose, initial }: Props) {
           <button className={btn + ' bg-gray-700 text-gray-200'} onClick={() => void save()}>
             保存
           </button>
-          {testMsg && <span className="text-xs text-gray-300">{testMsg}</span>}
-          {saveMsg && <span className="text-xs text-gray-300">{saveMsg}</span>}
+          {testState && (
+            <span className="text-xs text-gray-300 flex items-center gap-1">
+              {testState.ok ? (
+                <CheckCircle2 size={14} className="text-green-400" />
+              ) : (
+                <XCircle size={14} className="text-red-400" />
+              )}
+              {testState.text}
+            </span>
+          )}
+          {saveState && (
+            <span className="text-xs text-gray-300 flex items-center gap-1">
+              {saveState.ok ? (
+                <CheckCircle2 size={14} className="text-green-400" />
+              ) : (
+                <XCircle size={14} className="text-red-400" />
+              )}
+              {saveState.text}
+            </span>
+          )}
         </div>
       </div>
     </div>

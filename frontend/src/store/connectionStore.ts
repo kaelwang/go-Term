@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { rest } from '../api/rest'
-import type { ConnectionGroup, ProtocolType, SavedConnection } from '../types'
+import type { ConnectionGroup, ProtocolType, SavedConnection, TunnelConfig } from '../types'
 
 export interface SaveConnectionInput {
   name: string
@@ -18,6 +18,8 @@ export interface SaveConnectionInput {
   groupId?: number | null
   /** SSH config Host alias (server ~/.ssh/config). Optional, user-editable. */
   sshConfigHost?: string
+  /** Optional SSH port-forwarding (tunnel) rule, persisted inside the options JSON column. */
+  tunnel?: TunnelConfig
 }
 
 interface ConnectionState {
@@ -66,7 +68,13 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       const [g, c] = await Promise.all([rest.listGroups(), rest.listConnections()])
       if (g.code === 0) set({ groups: g.data || [] })
       else set({ error: g.message })
-      if (c.code === 0) set({ connections: c.data || [] })
+      if (c.code === 0) {
+        const conns = (c.data || []).map((x: SavedConnection) => ({
+          ...x,
+          tunnel: (x.options as { tunnel?: TunnelConfig })?.tunnel,
+        }))
+        set({ connections: conns })
+      }
       else set({ error: c.message })
     } catch (e) {
       set({ error: String(e) })
@@ -155,6 +163,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         credential_id: credId,
         group_id: input.groupId ?? null,
         ssh_config_host: input.sshConfigHost || null,
+        options: input.tunnel ? { tunnel: input.tunnel } : {},
       })
       if (r.code === 0) {
         await get().load()
@@ -222,6 +231,12 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       // from being lost on save.
       if (input.sshConfigHost !== undefined) {
         patch.ssh_config_host = input.sshConfigHost
+      }
+      // Port-forwarding (tunnel) rule, stored inside the options JSON column.
+      // Always written when present so disabling a previously saved tunnel
+      // clears it (the store's read-modify-write keeps other option sub-keys).
+      if (input.tunnel !== undefined) {
+        patch.options = input.tunnel ? { tunnel: input.tunnel } : {}
       }
       const r = await rest.updateConnection(id, patch)
       if (r.code === 0) {

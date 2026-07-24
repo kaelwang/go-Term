@@ -43,6 +43,7 @@ export interface SavedConnection {
   proxy?: any
   hops?: any
   options?: any
+  tunnel?: TunnelConfig
   created_at: string
   updated_at: string
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { KeyRound, Eye, EyeOff, Pencil, X } from 'lucide-react'
 import { rest } from '../api/rest'
 import type { CredentialMeta, CredentialSecret } from '../types'
 import ModalDialog from './ModalDialog'
@@ -138,8 +139,9 @@ export default function VaultPanel() {
               <div className="flex items-center justify-between">
                 <div className="min-w-0">
                   <div className="text-gray-200 truncate">{c.name}</div>
-                  <div className="text-[11px] text-gray-500">
-                    {c.type === 'password' ? '🔑 密码' : '🗝️ 私钥'}
+                  <div className="text-[11px] text-gray-500 flex items-center gap-1">
+                    <KeyRound size={12} className="shrink-0" />
+                    {c.type === 'password' ? '密码' : '私钥'}
                     {c.meta?.username ? ' · ' + c.meta.username : ''}
                   </div>
                 </div>
@@ -149,7 +151,7 @@ export default function VaultPanel() {
                     title="查看/隐藏明文"
                     onClick={() => reveal(c.id)}
                   >
-                    {secret ? '🙈' : '👁'}
+                    {secret ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                   <button
                     className="text-xs hover:text-gray-200"
@@ -166,14 +168,14 @@ export default function VaultPanel() {
                       })
                     }
                   >
-                    ✎
+                    <Pencil size={14} />
                   </button>
                   <button
                     className="text-xs hover:text-red-400"
                     title="删除"
                     onClick={() => del(c.id)}
                   >
-                    ✕
+                    <X size={14} />
                   </button>
                 </div>
               </div>
@@ -225,7 +227,7 @@ export default function VaultPanel() {
                 className="text-gray-400 hover:text-gray-200"
                 onClick={() => setEditing(null)}
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
             <div>

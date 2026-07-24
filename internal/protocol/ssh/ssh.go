@@ -28,18 +28,22 @@ func (SSH) Dial(conn *protocol.Connection) (protocol.Conn, error) {
 // sshConn adapts an *ssh.Session (and its client) to the protocol.Conn
 // interface used by the gateway.
 type sshConn struct {
-	client       *cryptossh.Client
-	extraClients []*cryptossh.Client
-	session      *cryptossh.Session
-	stdin        io.WriteCloser
-	reader       io.Reader
-	pty          bool
+	client          *cryptossh.Client
+	extraClients    []*cryptossh.Client
+	session         *cryptossh.Session
+	stdin           io.WriteCloser
+	reader          io.Reader
+	pty             bool
+	tunnelListeners []net.Listener
 }
 
 func (c *sshConn) Read(p []byte) (int, error)  { return c.reader.Read(p) }
 func (c *sshConn) Write(p []byte) (int, error) { return c.stdin.Write(p) }
 
 func (c *sshConn) Close() error {
+	for _, l := range c.tunnelListeners {
+		_ = l.Close()
+	}
 	_ = c.stdin.Close()
 	_ = c.session.Close()
 	_ = c.client.Close()
@@ -138,17 +142,20 @@ func Dial(conn *protocol.Connection) (protocol.Conn, error) {
 		return nil, err
 	}
 
+	var tunnels []net.Listener
 	if conn.Tunnel != nil {
-		if e := startTunnel(client, conn.Tunnel); e != nil {
+		ls, e := startTunnel(client, conn.Tunnel)
+		if e != nil {
 			_ = client.Close()
 			for _, ec := range extra {
 				_ = ec.Close()
 			}
 			return nil, fmt.Errorf("%w: tunnel: %v", protocol.ErrConnectionFailed, e)
 		}
+		tunnels = ls
 	}
 
-	return newSession(client, conn, extra)
+	return newSession(client, conn, extra, tunnels)
 }
 
 // applySSHConfig augments conn with values resolved from a ~/.ssh/config
@@ -256,7 +263,7 @@ func buildHopsFromProxyJump(jump string) []*protocol.HopConfig {
 
 // newSession opens a shell (or runs a command) on an established client and
 // adapts it to protocol.Conn.
-func newSession(client *cryptossh.Client, conn *protocol.Connection, extra []*cryptossh.Client) (protocol.Conn, error) {
+func newSession(client *cryptossh.Client, conn *protocol.Connection, extra []*cryptossh.Client, tunnels []net.Listener) (protocol.Conn, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", protocol.ErrConnectionFailed, err)
@@ -268,11 +275,12 @@ func newSession(client *cryptossh.Client, conn *protocol.Connection, extra []*cr
 	session.Stderr = pw
 
 	c := &sshConn{
-		client:       client,
-		extraClients: extra,
-		session:      session,
-		reader:       pr,
-		pty:          conn.InitialCols > 0,
+		client:          client,
+		extraClients:    extra,
+		session:         session,
+		reader:          pr,
+		pty:             conn.InitialCols > 0,
+		tunnelListeners: tunnels,
 	}
 
 	stdin, err := session.StdinPipe()

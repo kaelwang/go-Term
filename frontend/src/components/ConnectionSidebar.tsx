@@ -29,6 +29,7 @@ function toSpec(c: SavedConnection): ConnectionSpec {
     initial_rows: 24,
     transfer: c.protocol === 'ssh' ? 'sftp' : 'sftp',
     ssh_config_host: c.ssh_config_host || undefined,
+    tunnel: c.tunnel ?? (c.options as { tunnel?: { type: string; local_addr: string; remote_addr: string } })?.tunnel,
   }
 }
 

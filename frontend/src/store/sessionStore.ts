@@ -35,9 +35,19 @@ export const useSessionStore = create<SessionState>((set) => ({
       ),
     })),
   remove: (id) =>
-    set((st) => ({
-      sessions: st.sessions.filter((x) => x.id !== id),
-      activeId: st.activeId === id ? null : st.activeId,
-    })),
+    set((st) => {
+      const idx = st.sessions.findIndex((x) => x.id === id)
+      if (idx === -1) return {}
+      const sessions = st.sessions.filter((x) => x.id !== id)
+      let activeId = st.activeId
+      if (st.activeId === id) {
+        // After closing the active tab, focus a neighbor: prefer the left one,
+        // then the right; if neither exists, there are no tabs left.
+        const left = idx > 0 ? st.sessions[idx - 1] : undefined
+        const right = idx < st.sessions.length - 1 ? st.sessions[idx + 1] : undefined
+        activeId = (left ?? right)?.id ?? null
+      }
+      return { sessions, activeId }
+    }),
   setActive: (id) => set({ activeId: id }),
 }))

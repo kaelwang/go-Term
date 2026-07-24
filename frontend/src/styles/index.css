@@ -34,3 +34,12 @@ body {
   background: #4b5563;
   border-radius: 4px;
 }
+
+/* hide scrollbar where navigation is provided by arrow buttons (tab strip) */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

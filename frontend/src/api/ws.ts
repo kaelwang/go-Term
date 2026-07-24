@@ -39,13 +39,8 @@ export class WSClient {
   }
 
   private raw(msg: WsMessage): void {
-    const state = this.ws?.readyState
-    console.log('[WSClient] raw called, type=', msg.type, 'readyState=', state, 'ws=', !!this.ws)
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
-      console.log('[WSClient] sent:', msg.type)
-    } else {
-      console.warn('[WSClient] dropped (not OPEN):', msg.type, 'readyState=', state)
     }
   }
 
@@ -54,14 +49,17 @@ export class WSClient {
     this.ws = new WebSocket(this.url)
     this.ws.onopen = () => {
       this.startHeartbeat()
-      // Transport is up and we are about to send the connect request. Signal
-      // the UI so the session dot turns green ("connected normally").
-      this.onOpen?.()
+      // Send the connect request FIRST. XTermView's onOpen callback triggers
+      // fit() and pushes the real terminal size via a `resize` message; if that
+      // fired before connect, the resize would become the first frame the server
+      // reads and Connect() would see an empty connectRequest.Payload.Connection,
+      // surfacing as "missing connection spec".
       this.raw({
         type: 'connect',
         session: this.sessionId,
         payload: { connection: spec },
       })
+      this.onOpen?.()
     }
     this.ws.onmessage = (ev) => {
       try {

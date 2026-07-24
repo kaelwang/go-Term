@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Folder, File as FileIcon } from 'lucide-react'
 import type { ConnectionSpec, FileEntry } from '../types'
 import { ErrorCode } from '../types'
 import {
@@ -169,7 +170,12 @@ export default function FilePanel({ connection, onOpenFile }: Props) {
               <tr key={e.path} className="border-b border-gray-800 hover:bg-gray-800/60">
                 <td className="px-2 py-1">
                   <span className={e.is_dir ? 'text-accent' : e.is_symlink ? 'text-yellow-300' : ''}>
-                    {e.is_dir ? '📁' : '📄'} {e.name}
+                    {e.is_dir ? (
+                      <Folder size={14} className="inline align-text-bottom" />
+                    ) : (
+                      <FileIcon size={14} className="inline align-text-bottom" />
+                    )}{' '}
+                    {e.name}
                   </span>
                 </td>
                 <td className="px-2 py-1 text-right text-gray-400">{e.is_dir ? '—' : formatSize(e.size)}</td>
